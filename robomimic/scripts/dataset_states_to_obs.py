@@ -145,6 +145,7 @@ def dataset_states_to_obs(args):
     env = EnvUtils.create_env_for_data_processing(
         env_meta=env_meta,
         camera_names=args.camera_names, 
+        camera_depths=args.camera_depths,
         camera_height=args.camera_height, 
         camera_width=args.camera_width, 
         reward_shaping=args.shaped,
@@ -273,6 +274,15 @@ if __name__ == "__main__":
         nargs='+',
         default=[],
         help="(optional) camera name(s) to use for image observations. Leave out to not use image observations.",
+    )
+
+    # camera names to use for observations
+    parser.add_argument(
+        "--camera_depths",
+        type=int,
+        nargs='+',
+        default=[],
+        help="(optional) camera name(s) to use for depth observations. Leave out to not use depth observations.",
     )
 
     parser.add_argument(

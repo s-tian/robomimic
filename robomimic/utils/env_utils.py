@@ -195,6 +195,7 @@ def create_env_from_metadata(
 def create_env_for_data_processing(
     env_meta,
     camera_names, 
+    camera_depths,
     camera_height, 
     camera_width, 
     reward_shaping,
@@ -211,7 +212,9 @@ def create_env_for_data_processing(
                 :`'type'`: type of environment, should be a value in EB.EnvType
                 :`'env_kwargs'`: dictionary of keyword arguments to pass to environment constructor
 
-        camera_names (list of st): list of camera names that correspond to image observations
+        camera_names (list of str): list of camera names that correspond to image observations
+
+        camera_depths (list of int): list of camera names that correspond to depth image observations
 
         camera_height (int): camera height for all cameras
 
@@ -228,6 +231,7 @@ def create_env_for_data_processing(
     env_kwargs = deepcopy(env_kwargs)
     env_kwargs.pop("env_name", None)
     env_kwargs.pop("camera_names", None)
+    env_kwargs.pop("camera_depths", None)
     env_kwargs.pop("camera_height", None)
     env_kwargs.pop("camera_width", None)
     env_kwargs.pop("reward_shaping", None)
@@ -235,6 +239,7 @@ def create_env_for_data_processing(
     return env_class.create_for_data_processing(
         env_name=env_name, 
         camera_names=camera_names, 
+        camera_depths=camera_depths,
         camera_height=camera_height, 
         camera_width=camera_width, 
         reward_shaping=reward_shaping, 

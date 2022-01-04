@@ -60,7 +60,7 @@ class EnvRobosuite(EB.EnvBase):
             ignore_done=True,
             use_object_obs=True,
             use_camera_obs=use_image_obs,
-            camera_depths=False,
+            #camera_depths=camera_depths,
         )
         kwargs.update(update_kwargs)
 
@@ -185,6 +185,11 @@ class EnvRobosuite(EB.EnvBase):
                 ret[k] = di[k][::-1]
                 if self.postprocess_visual_obs:
                     ret[k] = ObsUtils.process_obs(obs=ret[k], obs_key=k)
+            # get depth observation
+            if (k in ObsUtils.OBS_KEYS_TO_MODALITIES) and ObsUtils.key_is_obs_modality(key=k, obs_modality="depth"):
+                ret[k] = di[k][::-1]
+                if self.postprocess_visual_obs:
+                    ret[k] = ObsUtils.process_obs(obs=ret[k], obs_key=k)
 
         # "object" key contains object information
         ret["object"] = np.array(di["object-state"])
@@ -287,6 +292,7 @@ class EnvRobosuite(EB.EnvBase):
         cls, 
         env_name, 
         camera_names, 
+        camera_depths,
         camera_height, 
         camera_width, 
         reward_shaping, 
@@ -300,12 +306,13 @@ class EnvRobosuite(EB.EnvBase):
         Args:
             env_name (str): name of environment
             camera_names (list of str): list of camera names that correspond to image observations
+            depth_camera_names (list of str): list of depth camera names that correspond to depth image observations
             camera_height (int): camera height for all cameras
             camera_width (int): camera width for all cameras
             reward_shaping (bool): if True, use shaped environment rewards, else use sparse task completion rewards
         """
         is_v1 = (robosuite.__version__.split(".")[0] == "1")
-        has_camera = (len(camera_names) > 0)
+        has_camera = (len(camera_names) > 0) or (len(camera_depths) > 0)
 
         new_kwargs = {
             "reward_shaping": reward_shaping,
@@ -314,6 +321,7 @@ class EnvRobosuite(EB.EnvBase):
         if has_camera:
             if is_v1:
                 new_kwargs["camera_names"] = list(camera_names)
+                new_kwargs["camera_depths"] = list(camera_depths)
                 new_kwargs["camera_heights"] = camera_height
                 new_kwargs["camera_widths"] = camera_width
             else:
@@ -333,10 +341,23 @@ class EnvRobosuite(EB.EnvBase):
             # v0.3 only had support for one image, and it was named "rgb"
             assert len(image_modalities) == 1
             image_modalities = ["rgb"]
+        
+        # initialize depth modality
+        if len(camera_depths) == 1:
+            camera_depths = camera_depths * len(camera_names)
+        assert len(camera_depths) == len(camera_names)
+
+        depth_modalities = list(camera_depths)
+        if is_v1:
+            depth_modalities = ["{}_depth".format(cn) for cn, d in zip(camera_names, camera_depths) if d]
+        else:
+            depth_modalities = []
+
         obs_modality_specs = {
             "obs": {
                 "low_dim": [], # technically unused, so we don't have to specify all of them
                 "rgb": image_modalities,
+                "depth": depth_modalities,
             }
         }
         ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs)
