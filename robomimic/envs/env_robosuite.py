@@ -52,6 +52,11 @@ class EnvRobosuite(EB.EnvBase):
             assert (int(robosuite.__version__.split(".")[1]) >= 2), "only support robosuite v0.3 and v1.2+"
 
         kwargs = deepcopy(kwargs)
+        
+        #check if domain randomization is happening
+        randomize_lighting = kwargs.pop("randomize_lighting", False)
+        randomize_color = kwargs.pop("randomize_color", False)
+        randomize_domain = randomize_lighting or randomize_color 
 
         # update kwargs based on passed arguments
         update_kwargs = dict(
@@ -60,6 +65,7 @@ class EnvRobosuite(EB.EnvBase):
             ignore_done=True,
             use_object_obs=True,
             use_camera_obs=use_image_obs,
+            hard_reset=False if randomize_domain else kwargs.get('hard_reset', True)
             #camera_depths=camera_depths,
         )
         kwargs.update(update_kwargs)
@@ -87,6 +93,46 @@ class EnvRobosuite(EB.EnvBase):
             for ob_name in self.env.observation_names:
                 if ("joint_pos" in ob_name) or ("eef_vel" in ob_name):
                     self.env.modify_observable(observable_name=ob_name, attribute="active", modifier=True)
+        
+        # apply domain randomization wrapper
+        if randomize_domain:
+            from robosuite.wrappers import DomainRandomizationWrapper
+            COLOR_ARGS = {
+                "geom_names": None,  # all geoms are randomized
+                "randomize_local": True,  # sample nearby colors
+                "randomize_material": True,  # randomize material reflectance / shininess / specular
+                "local_rgb_interpolation": 0.2,
+                "local_material_interpolation": 0.3,
+                "texture_variations": ["rgb", "checker", "noise", "gradient"],  # all texture variation types
+                "randomize_skybox": False,  # by default, randomize skybox too
+            }
+
+            LIGHTING_ARGS = {
+                "light_names": None,  # all lights are randomized
+                "randomize_position": False,
+                "randomize_direction": True,
+                "randomize_specular": True,
+                "randomize_ambient": True,
+                "randomize_diffuse": True,
+                "randomize_active": True,
+                "position_perturbation_size": 0.1,
+                "direction_perturbation_size": 0.35,
+                "specular_perturbation_size": 0.1,
+                "ambient_perturbation_size": 0.1,
+                "diffuse_perturbation_size": 0.1,
+            }
+
+            self.env = DomainRandomizationWrapper(
+                self.env, 
+                randomize_color=randomize_color, 
+                randomize_camera=False,
+                randomize_lighting=randomize_lighting,
+                randomize_dynamics=False,
+                color_randomization_args=COLOR_ARGS,
+                lighting_randomization_args=LIGHTING_ARGS,
+                randomize_on_reset=True,
+                randomize_every_n_steps=0, # only randomize on reset (randomize per episode) 
+            )
 
     def step(self, action):
         """

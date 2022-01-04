@@ -149,14 +149,17 @@ def dataset_states_to_obs(args):
         camera_height=args.camera_height, 
         camera_width=args.camera_width, 
         reward_shaping=args.shaped,
+        randomize_lighting=args.randomize_lighting,
+        randomize_color=args.randomize_color
     )
-
-    print("==== Using environment with the following metadata ====")
-    print(json.dumps(env.serialize(), indent=4))
-    print("")
 
     # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
     is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+
+    # add domain randomization if specified 
+    print("==== Using environment with the following metadata ====")
+    print(json.dumps(env.serialize(), indent=4))
+    print("")
 
     # list of all demonstration episodes (sorted in increasing number order)
     f = h5py.File(args.dataset, "r")
@@ -265,6 +268,19 @@ if __name__ == "__main__":
         "--shaped", 
         action='store_true',
         help="(optional) use shaped rewards",
+    )
+
+    # flag for domain randomization
+    parser.add_argument(
+        "--randomize_lighting", 
+        action='store_true',
+        help="(optional) Use lighting domain randomization",
+    )
+
+    parser.add_argument(
+        "--randomize_color", 
+        action='store_true',
+        help="(optional) Use color domain randomization",
     )
 
     # camera names to use for observations

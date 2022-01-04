@@ -199,6 +199,8 @@ def create_env_for_data_processing(
     camera_height, 
     camera_width, 
     reward_shaping,
+    randomize_lighting,
+    randomize_color,
 ):
     """
     Creates environment for processing dataset observations and rewards.
@@ -235,6 +237,8 @@ def create_env_for_data_processing(
     env_kwargs.pop("camera_height", None)
     env_kwargs.pop("camera_width", None)
     env_kwargs.pop("reward_shaping", None)
+    env_kwargs.pop("randomize_lighting", None)
+    env_kwargs.pop("randomize_color", None)
 
     return env_class.create_for_data_processing(
         env_name=env_name, 
@@ -243,5 +247,7 @@ def create_env_for_data_processing(
         camera_height=camera_height, 
         camera_width=camera_width, 
         reward_shaping=reward_shaping, 
+        randomize_lighting=randomize_lighting,
+        randomize_color=randomize_color,
         **env_kwargs,
     )
