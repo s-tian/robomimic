@@ -50,6 +50,80 @@ import robomimic.utils.env_utils as EnvUtils
 from robomimic.envs.env_base import EnvBase
 
 
+def extract_trajectory_actions(
+    env, 
+    initial_state, 
+    states, 
+    actions,
+    done_mode,
+):
+    
+    # Extract a trajectory, but instead of directly setting future MuJoCo states, take each action in sequence.
+    assert isinstance(env, EnvBase)
+    assert states.shape[0] == actions.shape[0]
+
+    # load the initial state
+    env.reset()
+    obs = env.reset_to(initial_state)
+
+    traj = dict(
+        obs=[], 
+        next_obs=[], 
+        rewards=[], 
+        dones=[], 
+        actions=np.array(actions), 
+        states=np.array(states), 
+        initial_state_dict=initial_state,
+    )
+    traj_len = states.shape[0]
+    obs["state"] = env.get_state()["states"]
+
+    # iteration variable @t is over "next obs" indices
+    for t in range(1, traj_len + 1):
+        next_obs, _, _, _ = env.step(actions[t - 1])
+
+        # infer reward signal
+        # note: our tasks use reward r(s'), reward AFTER transition, so this is
+        #       the reward for the current timestep
+        r = env.get_reward()
+
+        # infer done signal
+        done = False
+        if (done_mode == 1) or (done_mode == 2):
+            # done = 1 at end of trajectory
+            done = done or (t == traj_len)
+        if (done_mode == 0) or (done_mode == 2):
+            # done = 1 when s' is task success state
+            done = done or env.is_success()["task"]
+        done = int(done)
+
+        next_obs['state'] = env.get_state()["states"]
+        # collect transition
+        traj["obs"].append(obs)
+        traj["next_obs"].append(next_obs)
+        traj["rewards"].append(r)
+        traj["dones"].append(done)
+
+        # update for next iter
+        obs = deepcopy(next_obs)
+
+    # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
+    traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
+    traj["next_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["next_obs"])
+
+    # list to numpy array
+    for k in traj:
+        if k == "initial_state_dict":
+            continue
+        if isinstance(traj[k], dict):
+            for kp in traj[k]:
+                traj[k][kp] = np.array(traj[k][kp])
+        else:
+            traj[k] = np.array(traj[k])
+
+    return traj
+
+
 def extract_trajectory(
     env, 
     initial_state, 
@@ -87,9 +161,10 @@ def extract_trajectory(
         initial_state_dict=initial_state,
     )
     traj_len = states.shape[0]
+
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len + 1):
-
+            
         # get next observation
         if t == traj_len:
             # play final action to get next observation for last timestep
@@ -112,7 +187,6 @@ def extract_trajectory(
             # done = 1 when s' is task success state
             done = done or env.is_success()["task"]
         done = int(done)
-
         # collect transition
         traj["obs"].append(obs)
         traj["next_obs"].append(next_obs)
@@ -197,6 +271,36 @@ def dataset_states_to_obs(args):
             actions=actions,
             done_mode=args.done_mode,
         )
+
+        if args.verbose:
+            #with open('demo_action.txt', 'w') as fi:
+            #    print(actions.shape)
+            #    np.savetxt(fi, actions)
+
+            # traj_actions = extract_trajectory_actions(
+            #     env=env, 
+            #     initial_state=initial_state, 
+            #     states=states, 
+            #     actions=actions,
+            #     done_mode=args.done_mode,
+            # )
+
+            def create_visualization_gif(obs_list, obs_list_2, name, fps=5):
+                from moviepy.editor import ImageSequenceClip
+                obs_list = [np.concatenate((a, b), axis=0) for a, b in zip(obs_list, obs_list_2)]
+                clip = ImageSequenceClip(obs_list, fps=fps)
+                clip.write_gif(f'{name}.gif', fps=fps)
+
+            #print(traj["obs"]["state"])
+            #print(traj_actions["obs"]["state"])
+            #deltas = traj["obs"]["state"] - traj_actions["obs"]["state"]
+            #for i, delta_t in enumerate(deltas):
+            #    err = np.linalg.norm(delta_t)
+            #    print(f'Timestep {i} diverged by {err}')
+
+            #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"]), f"vis_traj{ind}")
+            create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj["obs"]["agentview_image"]), f"vis_traj{ind}")
+            #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"] - traj["obs"]["agentview_image"]), f"vis_traj{ind}")
 
         # maybe copy reward or done signal from source file
         if args.copy_rewards:
@@ -340,6 +444,15 @@ if __name__ == "__main__":
         action='store_true',
         help="(optional) copy dones from source file instead of inferring them",
     )
+
+    # flag for verbose output 
+    parser.add_argument(
+        "--verbose", 
+        action='store_true',
+        help="(optional) output comparison GIFs",
+    )
+
+
 
     args = parser.parse_args()
     dataset_states_to_obs(args)
