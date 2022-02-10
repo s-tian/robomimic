@@ -201,6 +201,7 @@ def create_env_for_data_processing(
     reward_shaping,
     randomize_lighting,
     randomize_color,
+    randomize_freq,
 ):
     """
     Creates environment for processing dataset observations and rewards.
@@ -239,6 +240,7 @@ def create_env_for_data_processing(
     env_kwargs.pop("reward_shaping", None)
     env_kwargs.pop("randomize_lighting", None)
     env_kwargs.pop("randomize_color", None)
+    env_kwargs.pop("randomize_freq", None)
 
     return env_class.create_for_data_processing(
         env_name=env_name, 
@@ -249,5 +251,6 @@ def create_env_for_data_processing(
         reward_shaping=reward_shaping, 
         randomize_lighting=randomize_lighting,
         randomize_color=randomize_color,
+        randomize_freq=randomize_freq,
         **env_kwargs,
     )

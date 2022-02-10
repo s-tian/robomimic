@@ -56,6 +56,7 @@ class EnvRobosuite(EB.EnvBase):
         #check if domain randomization is happening
         randomize_lighting = kwargs.pop("randomize_lighting", False)
         randomize_color = kwargs.pop("randomize_color", False)
+        randomize_freq = kwargs.pop("randomize_freq", 0)
         randomize_domain = randomize_lighting or randomize_color 
 
         # update kwargs based on passed arguments
@@ -122,6 +123,10 @@ class EnvRobosuite(EB.EnvBase):
                 "diffuse_perturbation_size": 0.1,
             }
 
+            print('randomize_color', randomize_color)
+            print('randomize_lighting', randomize_lighting)
+            print('randomize_freq', randomize_freq)
+
             self.env = DomainRandomizationWrapper(
                 self.env, 
                 randomize_color=randomize_color, 
@@ -131,7 +136,7 @@ class EnvRobosuite(EB.EnvBase):
                 color_randomization_args=COLOR_ARGS,
                 lighting_randomization_args=LIGHTING_ARGS,
                 randomize_on_reset=True,
-                randomize_every_n_steps=0, # only randomize on reset (randomize per episode) 
+                randomize_every_n_steps=randomize_freq, 
             )
 
     def step(self, action):
@@ -178,7 +183,8 @@ class EnvRobosuite(EB.EnvBase):
         if "model" in state:
             self.reset()
             xml = postprocess_model_xml(state["model"])
-            self.env.reset_from_xml_string(xml)
+            # ST: Commented below to enable domain randomization, because loading the XML resets all domain changes
+            #self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
                 # hide teleop visualization after restoring from model

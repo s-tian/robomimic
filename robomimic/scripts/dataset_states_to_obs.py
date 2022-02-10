@@ -171,6 +171,7 @@ def extract_trajectory(
             next_obs, _, _, _ = env.step(actions[t - 1])
         else:
             # reset to simulator state to get observation
+            env.step(np.zeros_like(actions[0])) # step env in order to trigger domain randomization
             next_obs = env.reset_to({"states" : states[t]})
 
         # infer reward signal
@@ -224,7 +225,8 @@ def dataset_states_to_obs(args):
         camera_width=args.camera_width, 
         reward_shaping=args.shaped,
         randomize_lighting=args.randomize_lighting,
-        randomize_color=args.randomize_color
+        randomize_color=args.randomize_color,
+        randomize_freq=args.randomize_freq,
     )
 
     # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
@@ -387,6 +389,13 @@ if __name__ == "__main__":
         help="(optional) Use color domain randomization",
     )
 
+    parser.add_argument(
+        "--randomize_freq", 
+        type=int,
+        default=0,
+        help="frequency of randomization",
+    )
+
     # camera names to use for observations
     parser.add_argument(
         "--camera_names",
@@ -451,7 +460,6 @@ if __name__ == "__main__":
         action='store_true',
         help="(optional) output comparison GIFs",
     )
-
 
 
     args = parser.parse_args()
