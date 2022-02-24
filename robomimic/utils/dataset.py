@@ -200,7 +200,9 @@ class SequenceDataset(torch.utils.data.Dataset):
                 assert demo_length >= 1  # sequence needs to have at least one sample
                 num_sequences = max(num_sequences, 1)
             else:
-                assert num_sequences >= 1  # assume demo_length >= (self.n_frame_stack - 1 + self.seq_length)
+                if num_sequences < 1:
+                    print(f"Sequence {ep} can't be used with this sequence length")
+                    #assert num_sequences >= 1  # assume demo_length >= (self.n_frame_stack - 1 + self.seq_length)
 
             for _ in range(num_sequences):
                 self._index_to_demo_id[self.total_num_sequences] = ep

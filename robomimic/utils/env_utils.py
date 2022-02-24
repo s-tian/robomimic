@@ -196,12 +196,14 @@ def create_env_for_data_processing(
     env_meta,
     camera_names, 
     camera_depths,
+    camera_segmentations,
     camera_height, 
     camera_width, 
     reward_shaping,
     randomize_lighting,
     randomize_color,
     randomize_freq,
+    renderer,
 ):
     """
     Creates environment for processing dataset observations and rewards.
@@ -230,11 +232,24 @@ def create_env_for_data_processing(
     env_kwargs = env_meta["env_kwargs"]
     env_class = get_env_class(env_type=env_type)
 
+    if renderer == 'igibson':
+        print('Using iGibson renderer')
+        from robosuite.renderers import load_renderer_config
+        renderer_config = load_renderer_config('igibson')
+        renderer_config['render_mode'] = 'headless'
+        renderer_config['camera_obs'] = True
+        renderer_config['msaa'] = True
+        renderer_config['width'] = camera_width
+        renderer_config['height'] = camera_height
+        env_kwargs['renderer'] = 'igibson'
+        env_kwargs['renderer_config'] = renderer_config
+
     # remove possibly redundant values in kwargs
     env_kwargs = deepcopy(env_kwargs)
     env_kwargs.pop("env_name", None)
     env_kwargs.pop("camera_names", None)
     env_kwargs.pop("camera_depths", None)
+    env_kwargs.pop("camera_segmentations", None)
     env_kwargs.pop("camera_height", None)
     env_kwargs.pop("camera_width", None)
     env_kwargs.pop("reward_shaping", None)
@@ -246,6 +261,7 @@ def create_env_for_data_processing(
         env_name=env_name, 
         camera_names=camera_names, 
         camera_depths=camera_depths,
+        camera_segmentations=camera_segmentations,
         camera_height=camera_height, 
         camera_width=camera_width, 
         reward_shaping=reward_shaping, 

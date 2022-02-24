@@ -59,6 +59,9 @@ class EnvRobosuite(EB.EnvBase):
         randomize_freq = kwargs.pop("randomize_freq", 0)
         randomize_domain = randomize_lighting or randomize_color 
 
+        hard_reset=False if randomize_domain else True
+        print('Hard reset is', hard_reset)
+
         # update kwargs based on passed arguments
         update_kwargs = dict(
             has_renderer=render,
@@ -66,7 +69,7 @@ class EnvRobosuite(EB.EnvBase):
             ignore_done=True,
             use_object_obs=True,
             use_camera_obs=use_image_obs,
-            hard_reset=False if randomize_domain else kwargs.get('hard_reset', True)
+            hard_reset=hard_reset,
             #camera_depths=camera_depths,
         )
         kwargs.update(update_kwargs)
@@ -345,6 +348,7 @@ class EnvRobosuite(EB.EnvBase):
         env_name, 
         camera_names, 
         camera_depths,
+        camera_segmentations,
         camera_height, 
         camera_width, 
         reward_shaping, 
@@ -370,10 +374,16 @@ class EnvRobosuite(EB.EnvBase):
             "reward_shaping": reward_shaping,
         }
 
+        if kwargs['renderer'] == 'igibson':
+            igibson = True
+        else:
+            igibson = False
+
         if has_camera:
             if is_v1:
                 new_kwargs["camera_names"] = list(camera_names)
                 new_kwargs["camera_depths"] = list(camera_depths)
+                new_kwargs["camera_segmentations"] = list(camera_segmentations)
                 new_kwargs["camera_heights"] = camera_height
                 new_kwargs["camera_widths"] = camera_width
             else:
@@ -405,21 +415,31 @@ class EnvRobosuite(EB.EnvBase):
         else:
             depth_modalities = []
 
+        if is_v1 and camera_segmentations is not None:
+            if igibson:
+                segmentation_modalities = ["{}_seg".format(cn) for cn in camera_names]
+            else:
+                segmentation_modalities = ["{}_segmentation_{}".format(cn, st) for cn, st in zip(camera_names, camera_segmentations)]
+        else:
+            segmentation_modalities = []
+
         obs_modality_specs = {
             "obs": {
                 "low_dim": [], # technically unused, so we don't have to specify all of them
                 "rgb": image_modalities,
-                "depth": depth_modalities,
+                "depth": depth_modalities + segmentation_modalities,
             }
         }
         ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs)
+
+
 
         # note that @postprocess_visual_obs is False since this env's images will be written to a dataset
         return cls(
             env_name=env_name,
             render=False, 
             render_offscreen=has_camera, 
-            use_image_obs=has_camera, 
+            use_image_obs=False if igibson else has_camera,
             postprocess_visual_obs=False,
             **kwargs,
         )

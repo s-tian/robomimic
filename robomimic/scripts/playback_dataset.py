@@ -177,6 +177,7 @@ def playback_trajectory_with_obs(
         if video_count % video_skip == 0:
             # concatenate image obs together
             im = [traj_grp["obs/{}".format(k)][i] for k in image_names]
+
             frame = np.concatenate(im, axis=1)
             video_writer.append_data(frame)
         video_count += 1
@@ -335,7 +336,7 @@ if __name__ == "__main__":
         help="(optional) render trajectories to this video file path",
     )
 
-    # How often to write video frames during the playback
+    #How often to write video frames during the playback
     parser.add_argument(
         "--video_skip",
         type=int,

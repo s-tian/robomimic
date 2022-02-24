@@ -148,16 +148,16 @@ def extract_trajectory(
     assert states.shape[0] == actions.shape[0]
 
     # load the initial state
-    env.reset()
+    #env.reset()
     obs = env.reset_to(initial_state)
 
     traj = dict(
-        obs=[], 
-        next_obs=[], 
-        rewards=[], 
-        dones=[], 
-        actions=np.array(actions), 
-        states=np.array(states), 
+        obs=[],
+        next_obs=[],
+        rewards=[],
+        dones=[],
+        actions=np.array(actions),
+        states=np.array(states),
         initial_state_dict=initial_state,
     )
     traj_len = states.shape[0]
@@ -172,7 +172,7 @@ def extract_trajectory(
         else:
             # reset to simulator state to get observation
             env.step(np.zeros_like(actions[0])) # step env in order to trigger domain randomization
-            next_obs = env.reset_to({"states" : states[t]})
+            next_obs = env.reset_to({"states": states[t]})
 
         # infer reward signal
         # note: our tasks use reward r(s'), reward AFTER transition, so this is
@@ -211,6 +211,17 @@ def extract_trajectory(
         else:
             traj[k] = np.array(traj[k])
 
+    if env.env.renderer == 'igibson':
+        # since the first state looks bad in igibson, we only take the second frame onwards.
+        for k in traj:
+            if k == "initial_state_dict":
+                continue
+            if isinstance(traj[k], dict):
+                for kp in traj[k]:
+                    traj[k][kp] = traj[k][kp][1:]
+            else:
+                traj[k] = traj[k][1:]
+
     return traj
 
 
@@ -221,12 +232,14 @@ def dataset_states_to_obs(args):
         env_meta=env_meta,
         camera_names=args.camera_names, 
         camera_depths=args.camera_depths,
+        camera_segmentations=args.camera_segmentations,
         camera_height=args.camera_height, 
         camera_width=args.camera_width, 
         reward_shaping=args.shaped,
         randomize_lighting=args.randomize_lighting,
         randomize_color=args.randomize_color,
         randomize_freq=args.randomize_freq,
+        renderer=args.renderer,
     )
 
     # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
@@ -320,16 +333,18 @@ def dataset_states_to_obs(args):
         ep_data_grp.create_dataset("rewards", data=np.array(traj["rewards"]))
         ep_data_grp.create_dataset("dones", data=np.array(traj["dones"]))
         for k in traj["obs"]:
+            if 'segmentation' in k:
+                # convert segmentations from uint32 to uint8, since we probably don't have that many segmentations
+                traj["obs"][k] = traj["obs"][k].astype(np.uint8)
+                traj["next_obs"][k] = traj["obs"][k].astype(np.uint8)
             ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
             ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
-
         # episode metadata
         if is_robosuite_env:
             ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
         ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
         total_samples += traj["actions"].shape[0]
         print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
-
 
     # copy over all filter keys that exist in the original hdf5
     if "mask" in f:
@@ -376,6 +391,13 @@ if __name__ == "__main__":
         help="(optional) use shaped rewards",
     )
 
+    parser.add_argument(
+        "--renderer",
+        type=str,
+        default="mujoco",
+        help="renderer to use",
+    )
+
     # flag for domain randomization
     parser.add_argument(
         "--randomize_lighting", 
@@ -412,6 +434,14 @@ if __name__ == "__main__":
         nargs='+',
         default=[],
         help="(optional) camera name(s) to use for depth observations. Leave out to not use depth observations.",
+    )
+
+    parser.add_argument(
+        "--camera_segmentations",
+        type=str,
+        nargs='+',
+        default=None,
+        help="(optional) types of camera segmentations to use",
     )
 
     parser.add_argument(
