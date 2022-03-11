@@ -912,6 +912,11 @@ class DepthModality(Modality):
             processed_obs (np.array or torch.Tensor): processed depth
         """
         if obs.shape[-1] == 1:
+            return batch_image_hwc_to_chw(obs)
+        else:
+            return batch_image_hwc_to_chw(obs[..., None])
+
+        if obs.shape[-1] == 1:
             return process_frame(frame=obs, channel_dim=1, scale=1.)
         else:
             # missing channel dim (like in segmentations from iGibson renderer)
@@ -941,7 +946,10 @@ class ScanModality(Modality):
 
     @classmethod
     def _default_obs_processor(cls, obs):
-        return obs
+        if obs.shape[-1] == 1:
+            return batch_image_hwc_to_chw(obs)
+        else:
+            return batch_image_hwc_to_chw(obs[..., None])
 
     @classmethod
     def _default_obs_unprocessor(cls, obs):

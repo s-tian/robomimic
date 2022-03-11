@@ -148,7 +148,7 @@ def extract_trajectory(
     assert states.shape[0] == actions.shape[0]
 
     # load the initial state
-    #env.reset()
+    # env.reset()
     obs = env.reset_to(initial_state)
 
     traj = dict(
@@ -173,7 +173,6 @@ def extract_trajectory(
             # reset to simulator state to get observation
             env.step(np.zeros_like(actions[0])) # step env in order to trigger domain randomization
             next_obs = env.reset_to({"states": states[t]})
-
         # infer reward signal
         # note: our tasks use reward r(s'), reward AFTER transition, so this is
         #       the reward for the current timestep
@@ -188,6 +187,7 @@ def extract_trajectory(
             # done = 1 when s' is task success state
             done = done or env.is_success()["task"]
         done = int(done)
+
         # collect transition
         traj["obs"].append(obs)
         traj["next_obs"].append(next_obs)
@@ -233,8 +233,8 @@ def dataset_states_to_obs(args):
         camera_names=args.camera_names, 
         camera_depths=args.camera_depths,
         camera_segmentations=args.camera_segmentations,
-        camera_height=args.camera_height, 
-        camera_width=args.camera_width, 
+        camera_height=args.render_height,
+        camera_width=args.render_width,
         reward_shaping=args.shaped,
         randomize_lighting=args.randomize_lighting,
         randomize_color=args.randomize_color,
@@ -288,33 +288,20 @@ def dataset_states_to_obs(args):
         )
 
         if args.verbose:
-            #with open('demo_action.txt', 'w') as fi:
-            #    print(actions.shape)
-            #    np.savetxt(fi, actions)
-
-            # traj_actions = extract_trajectory_actions(
-            #     env=env, 
-            #     initial_state=initial_state, 
-            #     states=states, 
-            #     actions=actions,
-            #     done_mode=args.done_mode,
-            # )
-
             def create_visualization_gif(obs_list, obs_list_2, name, fps=5):
                 from moviepy.editor import ImageSequenceClip
                 obs_list = [np.concatenate((a, b), axis=0) for a, b in zip(obs_list, obs_list_2)]
                 clip = ImageSequenceClip(obs_list, fps=fps)
                 clip.write_gif(f'{name}.gif', fps=fps)
-
-            #print(traj["obs"]["state"])
-            #print(traj_actions["obs"]["state"])
-            #deltas = traj["obs"]["state"] - traj_actions["obs"]["state"]
-            #for i, delta_t in enumerate(deltas):
-            #    err = np.linalg.norm(delta_t)
-            #    print(f'Timestep {i} diverged by {err}')
-
+            from perceptual_metrics.utils import save_np_img
+            # save_np_img(traj['obs']['agentview_image'].astype(np.uint8)[0], 'test_render64')
+            from PIL import Image
+            resize_image = Image.fromarray(traj['obs']['agentview_image'].astype(np.uint8)[0])
+            resize_image = resize_image.resize((64, 64), resample=Image.LANCZOS)
+            save_np_img(np.array(resize_image), 'test_resize_256_64_nearest')
+            quit()
             #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"]), f"vis_traj{ind}")
-            create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj["obs"]["agentview_image"]), f"vis_traj{ind}")
+            #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj["obs"]["agentview_image"]), f"vis_traj{ind}")
             #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"] - traj["obs"]["agentview_image"]), f"vis_traj{ind}")
 
         # maybe copy reward or done signal from source file
@@ -442,6 +429,20 @@ if __name__ == "__main__":
         nargs='+',
         default=None,
         help="(optional) types of camera segmentations to use",
+    )
+
+    parser.add_argument(
+        "--render_height",
+        type=int,
+        default=256,
+        help="(optional) height of image observations",
+    )
+
+    parser.add_argument(
+        "--render_width",
+        type=int,
+        default=256,
+        help="(optional) width of image observations",
     )
 
     parser.add_argument(

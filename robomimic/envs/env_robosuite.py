@@ -187,7 +187,7 @@ class EnvRobosuite(EB.EnvBase):
             self.reset()
             xml = postprocess_model_xml(state["model"])
             # ST: Commented below to enable domain randomization, because loading the XML resets all domain changes
-            #self.env.reset_from_xml_string(xml)
+            # self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
                 # hide teleop visualization after restoring from model
@@ -431,9 +431,6 @@ class EnvRobosuite(EB.EnvBase):
             }
         }
         ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs)
-
-
-
         # note that @postprocess_visual_obs is False since this env's images will be written to a dataset
         return cls(
             env_name=env_name,

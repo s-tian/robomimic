@@ -239,10 +239,16 @@ def create_env_for_data_processing(
         renderer_config['render_mode'] = 'headless'
         renderer_config['camera_obs'] = True
         renderer_config['msaa'] = True
+        renderer_config['enable_pbr'] = True
+        # renderer_config['optimized'] = True
+        renderer_config['light_dimming_factor'] = 1.2
         renderer_config['width'] = camera_width
         renderer_config['height'] = camera_height
+        renderer_config['enable_shadow'] = True
         env_kwargs['renderer'] = 'igibson'
         env_kwargs['renderer_config'] = renderer_config
+    else:
+        env_kwargs['renderer'] = 'mujoco'
 
     # remove possibly redundant values in kwargs
     env_kwargs = deepcopy(env_kwargs)
