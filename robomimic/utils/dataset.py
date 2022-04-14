@@ -9,6 +9,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 
 import torch.utils.data
+from torchvision.transforms import Resize, InterpolationMode
 
 import robomimic.utils.tensor_utils as TensorUtils
 import robomimic.utils.obs_utils as ObsUtils
@@ -32,6 +33,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         hdf5_normalize_obs=False,
         filter_by_attribute=None,
         load_next_obs=True,
+        image_size=None,
     ):
         """
         Dataset class for fetching sequences of experience.
@@ -87,7 +89,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         self.hdf5_normalize_obs = hdf5_normalize_obs
         self._hdf5_file = None
 
-        assert hdf5_cache_mode in ["all", "low_dim", None]
+        assert hdf5_cache_mode in ["all", "all_nogetitem", "low_dim", None]
         self.hdf5_cache_mode = hdf5_cache_mode
 
         self.load_next_obs = load_next_obs
@@ -102,6 +104,8 @@ class SequenceDataset(torch.utils.data.Dataset):
 
         self.seq_length = seq_length
         assert self.seq_length >= 1
+
+        self.image_size = image_size
 
         self.goal_mode = goal_mode
         if self.goal_mode is not None:
@@ -121,7 +125,7 @@ class SequenceDataset(torch.utils.data.Dataset):
             self.obs_normalization_stats = self.normalize_obs()
 
         # maybe store dataset in memory for fast access
-        if self.hdf5_cache_mode in ["all", "low_dim"]:
+        if self.hdf5_cache_mode in ["all", "all_nogetitem", "low_dim"]:
             obs_keys_in_memory = self.obs_keys
             if self.hdf5_cache_mode == "low_dim":
                 # only store low-dim observations
@@ -287,6 +291,7 @@ class SequenceDataset(torch.utils.data.Dataset):
             all_data[ep]["attrs"]["num_samples"] = hdf5_file["data/{}".format(ep)].attrs["num_samples"]
             # get obs
             all_data[ep]["obs"] = {k: hdf5_file["data/{}/obs/{}".format(ep, k)][()].astype('float32') for k in obs_keys}
+            all_data[ep]["obs"] = self.resize_image_observations(all_data[ep]["obs"], format='hwc', max=255.)
             if load_next_obs:
                 all_data[ep]["next_obs"] = {k: hdf5_file["data/{}/next_obs/{}".format(ep, k)][()].astype('float32') for k in obs_keys}
             # get other dataset keys
@@ -295,10 +300,8 @@ class SequenceDataset(torch.utils.data.Dataset):
                     all_data[ep][k] = hdf5_file["data/{}/{}".format(ep, k)][()].astype('float32')
                 else:
                     all_data[ep][k] = np.zeros((all_data[ep]["attrs"]["num_samples"], 1), dtype=np.float32)
-
             if "model_file" in hdf5_file["data/{}".format(ep)].attrs:
                 all_data[ep]["attrs"]["model_file"] = hdf5_file["data/{}".format(ep)].attrs["model_file"]
-
         return all_data
 
     def normalize_obs(self):
@@ -375,7 +378,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         """
 
         # check if this key should be in memory
-        key_should_be_in_memory = (self.hdf5_cache_mode in ["all", "low_dim"])
+        key_should_be_in_memory = (self.hdf5_cache_mode in ["all", "all_nogetitem", "low_dim"])
         if key_should_be_in_memory:
             # if key is an observation, it may not be in memory
             if '/' in key:
@@ -470,8 +473,51 @@ class SequenceDataset(torch.utils.data.Dataset):
             if self.hdf5_normalize_obs:
                 goal = ObsUtils.normalize_obs(goal, obs_normalization_stats=self.obs_normalization_stats)
             meta["goal_obs"] = {k: goal[k][0] for k in goal}  # remove sequence dimension for goal
-
+        meta["obs"] = self.resize_image_observations(meta["obs"])
         return meta
+
+    def resize_image_observations(self, obs, format='chw', max=1.0):
+        # really gross, refactor
+        def resize_tensor(t, dims, interpolation_mode):
+            h, w = dims
+            if t.shape[-2] == h and t.shape[-1] == w:
+                return t
+            else:
+                # uses Bilinear interpolation by default, use antialiasing
+                if interpolation_mode == InterpolationMode.BILINEAR:
+                    antialias=True
+                else:
+                    antialias = False
+                t = Resize(dims, interpolation=interpolation_mode, antialias=antialias)(t)
+                return t
+
+        if self.image_size is None:
+            # no resize specified
+            return obs
+        else:
+            for k, v in obs.items():
+                if v.shape[-2] == self.image_size[0] and v.shape[-1] == self.image_size[1]:
+                    return obs
+                interpolation_mode = InterpolationMode.BILINEAR
+                if 'seg' in k: # for segmentations, use Interpolation mode nearest to make sure things are still integers
+                    interpolation_mode = InterpolationMode.NEAREST
+                # if we have a video of any type, resize it
+                if 'seg' in k or 'depth' in k:
+                    if len(v.shape) == 3:
+                        if format == 'chw':
+                            v = v[:, None]
+                        else:
+                            v = v[..., None]
+                    max = v.max()
+
+                if len(v.shape) > 3:
+                    if format == 'chw':
+                        obs[k] = resize_tensor(torch.tensor(v), self.image_size, interpolation_mode).numpy()
+                    else:
+                        obs[k] = np.moveaxis(resize_tensor(torch.tensor(np.moveaxis(v, 3, 1)), self.image_size, interpolation_mode).numpy(), 1, 3)
+                        # obs[k] = np.squeeze(obs[k])
+                    obs[k] = np.clip(obs[k], 0.0, max)  # prevent interpolation numerical issues
+            return obs
 
     def get_sequence_from_demo(self, demo_id, index_in_demo, keys, num_frames_to_stack=0, seq_length=1):
         """

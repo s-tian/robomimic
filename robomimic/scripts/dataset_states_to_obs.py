@@ -64,7 +64,7 @@ def extract_trajectory_actions(
 
     # load the initial state
     env.reset()
-    obs = env.reset_to(initial_state)
+    obs = env.reset_to(initial_state, reset_from_xml=True)
 
     traj = dict(
         obs=[], 
@@ -77,7 +77,6 @@ def extract_trajectory_actions(
     )
     traj_len = states.shape[0]
     obs["state"] = env.get_state()["states"]
-
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len + 1):
         next_obs, _, _, _ = env.step(actions[t - 1])
@@ -148,8 +147,8 @@ def extract_trajectory(
     assert states.shape[0] == actions.shape[0]
 
     # load the initial state
-    # env.reset()
-    obs = env.reset_to(initial_state)
+    env.reset()
+    obs = env.reset_to(initial_state, reset_from_xml=True)
 
     traj = dict(
         obs=[],
@@ -164,14 +163,13 @@ def extract_trajectory(
 
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len + 1):
-            
         # get next observation
         if t == traj_len:
             # play final action to get next observation for last timestep
             next_obs, _, _, _ = env.step(actions[t - 1])
         else:
             # reset to simulator state to get observation
-            env.step(np.zeros_like(actions[0])) # step env in order to trigger domain randomization
+            # env.step(np.zeros_like(actions[0])) # step env in order to trigger domain randomization
             next_obs = env.reset_to({"states": states[t]})
         # infer reward signal
         # note: our tasks use reward r(s'), reward AFTER transition, so this is
@@ -211,16 +209,16 @@ def extract_trajectory(
         else:
             traj[k] = np.array(traj[k])
 
-    if env.env.renderer == 'igibson':
-        # since the first state looks bad in igibson, we only take the second frame onwards.
-        for k in traj:
-            if k == "initial_state_dict":
-                continue
-            if isinstance(traj[k], dict):
-                for kp in traj[k]:
-                    traj[k][kp] = traj[k][kp][1:]
-            else:
-                traj[k] = traj[k][1:]
+    # if env.env.renderer == 'igibson':
+    #     # since the first state looks bad in igibson, we only take the second frame onwards.
+    #     for k in traj:
+    #         if k == "initial_state_dict":
+    #             continue
+    #         if isinstance(traj[k], dict):
+    #             for kp in traj[k]:
+    #                 traj[k][kp] = traj[k][kp][1:]
+    #         else:
+    #             traj[k] = traj[k][1:]
 
     return traj
 
@@ -233,6 +231,7 @@ def dataset_states_to_obs(args):
         camera_names=args.camera_names, 
         camera_depths=args.camera_depths,
         camera_segmentations=args.camera_segmentations,
+        camera_normals=args.camera_normals,
         camera_height=args.render_height,
         camera_width=args.render_width,
         reward_shaping=args.shaped,
@@ -241,7 +240,6 @@ def dataset_states_to_obs(args):
         randomize_freq=args.randomize_freq,
         renderer=args.renderer,
     )
-
     # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
     is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
 
@@ -286,6 +284,13 @@ def dataset_states_to_obs(args):
             actions=actions,
             done_mode=args.done_mode,
         )
+        # traj_actions = extract_trajectory_actions(
+        #     env=env,
+        #     initial_state=initial_state,
+        #     states=states,
+        #     actions=actions,
+        #     done_mode=args.done_mode,
+        # )
 
         if args.verbose:
             def create_visualization_gif(obs_list, obs_list_2, name, fps=5):
@@ -293,14 +298,14 @@ def dataset_states_to_obs(args):
                 obs_list = [np.concatenate((a, b), axis=0) for a, b in zip(obs_list, obs_list_2)]
                 clip = ImageSequenceClip(obs_list, fps=fps)
                 clip.write_gif(f'{name}.gif', fps=fps)
-            from perceptual_metrics.utils import save_np_img
+            from perceptual_metrics.mpc.utils import save_np_img
             # save_np_img(traj['obs']['agentview_image'].astype(np.uint8)[0], 'test_render64')
-            from PIL import Image
-            resize_image = Image.fromarray(traj['obs']['agentview_image'].astype(np.uint8)[0])
-            resize_image = resize_image.resize((64, 64), resample=Image.LANCZOS)
-            save_np_img(np.array(resize_image), 'test_resize_256_64_nearest')
-            quit()
-            #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"]), f"vis_traj{ind}")
+            # from PIL import Image
+            # resize_image = Image.fromarray(traj['obs']['agentview_image'].astype(np.uint8)[0])
+            # resize_image = resize_image.resize((64, 64), resample=Image.LANCZOS)
+            # save_np_img(np.array(resize_image), 'test_resize_256_64_nearest')
+            # quit()
+            create_visualization_gif(list(traj["obs"]["agentview_shift_2_image"]), list(traj_actions["obs"]["agentview_shift_2_image"]), f"vis_traj{ind}")
             #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj["obs"]["agentview_image"]), f"vis_traj{ind}")
             #create_visualization_gif(list(traj["obs"]["agentview_image"]), list(traj_actions["obs"]["agentview_image"] - traj["obs"]["agentview_image"]), f"vis_traj{ind}")
 
@@ -331,7 +336,7 @@ def dataset_states_to_obs(args):
             ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
         ep_data_grp.attrs["num_samples"] = traj["actions"].shape[0] # number of transitions in this episode
         total_samples += traj["actions"].shape[0]
-        print("ep {}: wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
+        print("ep {}: Wrote {} transitions to group {}".format(ind, ep_data_grp.attrs["num_samples"], ep))
 
     # copy over all filter keys that exist in the original hdf5
     if "mask" in f:
@@ -421,6 +426,15 @@ if __name__ == "__main__":
         nargs='+',
         default=[],
         help="(optional) camera name(s) to use for depth observations. Leave out to not use depth observations.",
+    )
+
+    # camera names to use for observations
+    parser.add_argument(
+        "--camera_normals",
+        type=int,
+        nargs='+',
+        default=[],
+        help="(optional) camera name(s) to use for normal observations. Leave out to not use depth observations.",
     )
 
     parser.add_argument(

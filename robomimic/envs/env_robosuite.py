@@ -169,7 +169,7 @@ class EnvRobosuite(EB.EnvBase):
         di = self.env.reset()
         return self.get_observation(di)
 
-    def reset_to(self, state):
+    def reset_to(self, state, reset_from_xml=False):
         """
         Reset to a specific simulator state.
 
@@ -187,7 +187,8 @@ class EnvRobosuite(EB.EnvBase):
             self.reset()
             xml = postprocess_model_xml(state["model"])
             # ST: Commented below to enable domain randomization, because loading the XML resets all domain changes
-            # self.env.reset_from_xml_string(xml)
+            if reset_from_xml:
+                self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
                 # hide teleop visualization after restoring from model
@@ -196,7 +197,13 @@ class EnvRobosuite(EB.EnvBase):
         if "states" in state:
             self.env.sim.set_state_from_flattened(state["states"])
             self.env.sim.forward()
+            # Below line calls controller.update and controller.reset_goal
+            self.env.robots[0].controller.update_initial_joints(self.env.robots[0]._joint_positions)
+            # self.env.robots[0].controller.update(force=True)
+            # self.env.robots[0].controller.reset_goal()
             should_ret = True
+
+        self.env.viewer.update()
 
         if "goal" in state:
             self.set_goal(**state["goal"])
@@ -349,6 +356,7 @@ class EnvRobosuite(EB.EnvBase):
         camera_names, 
         camera_depths,
         camera_segmentations,
+        camera_normals,
         camera_height, 
         camera_width, 
         reward_shaping, 
@@ -415,7 +423,7 @@ class EnvRobosuite(EB.EnvBase):
         else:
             depth_modalities = []
 
-        if is_v1 and camera_segmentations is not None:
+        if is_v1 and camera_segmentations[0]:
             if igibson:
                 segmentation_modalities = ["{}_seg".format(cn) for cn in camera_names]
             else:
@@ -423,10 +431,14 @@ class EnvRobosuite(EB.EnvBase):
         else:
             segmentation_modalities = []
 
+        if is_v1 and camera_normals:
+            if igibson:
+                normal_modalities = ["{}_normal".format(cn) for cn, d in zip(camera_names, camera_normals) if d]
+
         obs_modality_specs = {
             "obs": {
                 "low_dim": [], # technically unused, so we don't have to specify all of them
-                "rgb": image_modalities,
+                "rgb": image_modalities + normal_modalities,
                 "depth": depth_modalities + segmentation_modalities,
             }
         }

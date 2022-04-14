@@ -197,7 +197,8 @@ def create_env_for_data_processing(
     camera_names, 
     camera_depths,
     camera_segmentations,
-    camera_height, 
+    camera_normals,
+    camera_height,
     camera_width, 
     reward_shaping,
     randomize_lighting,
@@ -241,12 +242,14 @@ def create_env_for_data_processing(
         renderer_config['msaa'] = True
         renderer_config['enable_pbr'] = True
         # renderer_config['optimized'] = True
-        renderer_config['light_dimming_factor'] = 1.2
+        renderer_config['light_dimming_factor'] = 1.0
         renderer_config['width'] = camera_width
         renderer_config['height'] = camera_height
         renderer_config['enable_shadow'] = True
         env_kwargs['renderer'] = 'igibson'
         env_kwargs['renderer_config'] = renderer_config
+        if camera_normals:
+            env_kwargs['renderer_config']['vision_modalities'] += ['normal']
     else:
         env_kwargs['renderer'] = 'mujoco'
 
@@ -256,6 +259,7 @@ def create_env_for_data_processing(
     env_kwargs.pop("camera_names", None)
     env_kwargs.pop("camera_depths", None)
     env_kwargs.pop("camera_segmentations", None)
+    env_kwargs.pop("camera_normals", None)
     env_kwargs.pop("camera_height", None)
     env_kwargs.pop("camera_width", None)
     env_kwargs.pop("reward_shaping", None)
@@ -268,6 +272,7 @@ def create_env_for_data_processing(
         camera_names=camera_names, 
         camera_depths=camera_depths,
         camera_segmentations=camera_segmentations,
+        camera_normals=camera_normals,
         camera_height=camera_height, 
         camera_width=camera_width, 
         reward_shaping=reward_shaping, 
