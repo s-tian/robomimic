@@ -508,7 +508,9 @@ class SequenceDataset(torch.utils.data.Dataset):
                             v = v[:, None]
                         else:
                             v = v[..., None]
-                    max = v.max()
+                    clamp_max = v.max()
+                else:
+                    clamp_max = max
 
                 if len(v.shape) > 3:
                     if format == 'chw':
@@ -516,7 +518,7 @@ class SequenceDataset(torch.utils.data.Dataset):
                     else:
                         obs[k] = np.moveaxis(resize_tensor(torch.tensor(np.moveaxis(v, 3, 1)), self.image_size, interpolation_mode).numpy(), 1, 3)
                         # obs[k] = np.squeeze(obs[k])
-                    obs[k] = np.clip(obs[k], 0.0, max)  # prevent interpolation numerical issues
+                    obs[k] = np.clip(obs[k], 0.0, clamp_max)  # prevent interpolation numerical issues
             return obs
 
     def get_sequence_from_demo(self, demo_id, index_in_demo, keys, num_frames_to_stack=0, seq_length=1):

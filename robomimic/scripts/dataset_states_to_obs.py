@@ -330,7 +330,8 @@ def dataset_states_to_obs(args):
                 traj["obs"][k] = traj["obs"][k].astype(np.uint8)
                 traj["next_obs"][k] = traj["obs"][k].astype(np.uint8)
             ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
-            ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
+            if args.no_store_next_obs:
+                ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
         # episode metadata
         if is_robosuite_env:
             ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
@@ -506,6 +507,12 @@ if __name__ == "__main__":
         help="(optional) output comparison GIFs",
     )
 
+    # Whether or not to save next obs, setting this to False will almost halve file size
+    parser.add_argument(
+        "--no_store_next_obs",
+        action='store_true',
+        help="(optional) whether to store next step observations",
+    )
 
     args = parser.parse_args()
     dataset_states_to_obs(args)

@@ -891,7 +891,6 @@ class ImageModality(Modality):
         """
         return TU.to_uint8(unprocess_frame(frame=obs, channel_dim=3, scale=255.))
 
-
 class DepthModality(Modality):
     """
     Modality for depth observations
