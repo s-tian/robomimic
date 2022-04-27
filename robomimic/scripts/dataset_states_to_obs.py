@@ -56,6 +56,7 @@ def extract_trajectory_actions(
     states, 
     actions,
     done_mode,
+    keep_textures=True,
 ):
     
     # Extract a trajectory, but instead of directly setting future MuJoCo states, take each action in sequence.
@@ -64,7 +65,11 @@ def extract_trajectory_actions(
 
     # load the initial state
     env.reset()
-    obs = env.reset_to(initial_state, reset_from_xml=True)
+    obs = env.reset_to(initial_state, reset_from_xml=keep_textures)
+
+    if not keep_textures:
+        initial_state = deepcopy(initial_state)
+        initial_state['model'] = env.env.sim.model.get_xml()
 
     traj = dict(
         obs=[], 
@@ -75,6 +80,7 @@ def extract_trajectory_actions(
         states=np.array(states), 
         initial_state_dict=initial_state,
     )
+
     traj_len = states.shape[0]
     obs["state"] = env.get_state()["states"]
     # iteration variable @t is over "next obs" indices
@@ -129,6 +135,7 @@ def extract_trajectory(
     states, 
     actions,
     done_mode,
+    keep_textures=True,
 ):
     """
     Helper function to extract observations, rewards, and dones along a trajectory using
@@ -148,7 +155,11 @@ def extract_trajectory(
 
     # load the initial state
     env.reset()
-    obs = env.reset_to(initial_state, reset_from_xml=True)
+    obs = env.reset_to(initial_state, reset_from_xml=keep_textures)
+
+    if not keep_textures:
+        initial_state = deepcopy(initial_state)
+        initial_state['model'] = env.env.sim.model.get_xml()
 
     traj = dict(
         obs=[],
@@ -226,6 +237,8 @@ def extract_trajectory(
 def dataset_states_to_obs(args):
     # create environment to use for data processing
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
+    env_meta['env_kwargs']['control_freq'] = 5
+    env_meta['env_kwargs']['textures'] = 'test' if args.unseen_textures else 'train'
     env = EnvUtils.create_env_for_data_processing(
         env_meta=env_meta,
         camera_names=args.camera_names, 
@@ -277,20 +290,25 @@ def dataset_states_to_obs(args):
 
         # extract obs, rewards, dones
         actions = f["data/{}/actions".format(ep)][()]
-        traj = extract_trajectory(
-            env=env, 
-            initial_state=initial_state, 
-            states=states, 
-            actions=actions,
-            done_mode=args.done_mode,
-        )
-        # traj_actions = extract_trajectory_actions(
-        #     env=env,
-        #     initial_state=initial_state,
-        #     states=states,
-        #     actions=actions,
-        #     done_mode=args.done_mode,
-        # )
+        if args.from_actions:
+            traj = extract_trajectory_actions(
+                env=env,
+                initial_state=initial_state,
+                states=states,
+                actions=actions,
+                done_mode=args.done_mode,
+                keep_textures=not args.unseen_textures,
+            )
+        else:
+            traj = extract_trajectory(
+                env=env,
+                initial_state=initial_state,
+                states=states,
+                actions=actions,
+                done_mode=args.done_mode,
+                keep_textures=not args.unseen_textures,
+            )
+
 
         if args.verbose:
             def create_visualization_gif(obs_list, obs_list_2, name, fps=5):
@@ -512,6 +530,19 @@ if __name__ == "__main__":
         "--no_store_next_obs",
         action='store_true',
         help="(optional) whether to store next step observations",
+    )
+
+    # Whether or not to save next obs, setting this to False will almost halve file size
+    parser.add_argument(
+        "--from_actions",
+        action='store_true',
+        help="(optional) use actions to generate trajectory",
+    )
+
+    parser.add_argument(
+        "--unseen_textures",
+        action='store_true',
+        help="(optional) unseen textures",
     )
 
     args = parser.parse_args()

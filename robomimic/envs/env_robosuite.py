@@ -183,12 +183,11 @@ class EnvRobosuite(EB.EnvBase):
                 if "states" is in @state)
         """
         should_ret = False
-        if "model" in state:
+        if "model" in state and reset_from_xml:
             self.reset()
             xml = postprocess_model_xml(state["model"])
             # ST: Commented below to enable domain randomization, because loading the XML resets all domain changes
-            if reset_from_xml:
-                self.env.reset_from_xml_string(xml)
+            self.env.reset_from_xml_string(xml)
             self.env.sim.reset()
             if not self._is_v1:
                 # hide teleop visualization after restoring from model
@@ -422,7 +421,6 @@ class EnvRobosuite(EB.EnvBase):
             depth_modalities = ["{}_depth".format(cn) for cn, d in zip(camera_names, camera_depths) if d]
         else:
             depth_modalities = []
-
         if is_v1 and camera_segmentations[0]:
             if igibson:
                 segmentation_modalities = ["{}_seg".format(cn) for cn in camera_names]
@@ -431,9 +429,10 @@ class EnvRobosuite(EB.EnvBase):
         else:
             segmentation_modalities = []
 
-        if is_v1 and camera_normals:
-            if igibson:
-                normal_modalities = ["{}_normal".format(cn) for cn, d in zip(camera_names, camera_normals) if d]
+        if is_v1 and camera_normals[0] and igibson:
+            normal_modalities = ["{}_normal".format(cn) for cn, d in zip(camera_names, camera_normals) if d]
+        else:
+            normal_modalities = []
 
         obs_modality_specs = {
             "obs": {
