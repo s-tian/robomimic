@@ -202,7 +202,8 @@ class EnvRobosuite(EB.EnvBase):
             # self.env.robots[0].controller.reset_goal()
             should_ret = True
 
-        self.env.viewer.update()
+        if self.env.renderer != 'mujoco':
+            self.env.viewer.update()
 
         if "goal" in state:
             self.set_goal(**state["goal"])
@@ -421,7 +422,7 @@ class EnvRobosuite(EB.EnvBase):
             depth_modalities = ["{}_depth".format(cn) for cn, d in zip(camera_names, camera_depths) if d]
         else:
             depth_modalities = []
-        if is_v1 and camera_segmentations[0]:
+        if is_v1 and camera_segmentations and camera_segmentations[0]:
             if igibson:
                 segmentation_modalities = ["{}_seg".format(cn) for cn in camera_names]
             else:
@@ -429,14 +430,14 @@ class EnvRobosuite(EB.EnvBase):
         else:
             segmentation_modalities = []
 
-        if is_v1 and camera_normals[0] and igibson:
+        if is_v1 and camera_normals and camera_normals[0] and igibson:
             normal_modalities = ["{}_normal".format(cn) for cn, d in zip(camera_names, camera_normals) if d]
         else:
             normal_modalities = []
 
         obs_modality_specs = {
             "obs": {
-                "low_dim": [], # technically unused, so we don't have to specify all of them
+                "low_dim": ['object', 'robot0_eef_pos', 'robot0_eef_quat'], # technically unused, so we don't have to specify all of them
                 "rgb": image_modalities + normal_modalities,
                 "depth": depth_modalities + segmentation_modalities,
             }

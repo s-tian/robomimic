@@ -57,6 +57,7 @@ def extract_trajectory_actions(
     actions,
     done_mode,
     keep_textures=True,
+    task_start_index=0,
 ):
     
     # Extract a trajectory, but instead of directly setting future MuJoCo states, take each action in sequence.
@@ -67,6 +68,20 @@ def extract_trajectory_actions(
     env.reset()
     obs = env.reset_to(initial_state, reset_from_xml=keep_textures)
 
+    # compute the goal with the arm at the initial state but the objects at final state
+    print('task start idx', task_start_index)
+
+    env.reset_to({'states': states[-1]}, reset_from_xml=keep_textures)
+    env.env.sim.forward()
+    final_object_positions = [deepcopy(env.env.sim.data.get_joint_qpos(obj.joints[0])) for obj in env.env.objects]
+    initial_task_state = states[task_start_index]
+    env.reset_to({'states': initial_task_state}, reset_from_xml=keep_textures)
+    for obj, pos in zip(env.env.objects, final_object_positions):
+        env.env.sim.data.set_joint_qpos(obj.joints[0], pos)
+    env.step(np.zeros(actions.shape[1]))
+    goal_obs = env.get_observation()
+    goal_obs['state'] = env.get_state()['states']
+    obs = env.reset_to(initial_state, reset_from_xml=keep_textures)
     if not keep_textures:
         initial_state = deepcopy(initial_state)
         initial_state['model'] = env.env.sim.model.get_xml()
@@ -79,6 +94,7 @@ def extract_trajectory_actions(
         actions=np.array(actions), 
         states=np.array(states), 
         initial_state_dict=initial_state,
+        goal_obs=[goal_obs],
     )
 
     traj_len = states.shape[0]
@@ -115,6 +131,7 @@ def extract_trajectory_actions(
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
     traj["next_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["next_obs"])
+    traj["goal_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["goal_obs"])
 
     # list to numpy array
     for k in traj:
@@ -136,6 +153,7 @@ def extract_trajectory(
     actions,
     done_mode,
     keep_textures=True,
+    task_start_index=0,
 ):
     """
     Helper function to extract observations, rewards, and dones along a trajectory using
@@ -164,6 +182,8 @@ def extract_trajectory(
     traj = dict(
         obs=[],
         next_obs=[],
+        object_positions=[],
+        object_orientations=[],
         rewards=[],
         dones=[],
         actions=np.array(actions),
@@ -202,7 +222,6 @@ def extract_trajectory(
         traj["next_obs"].append(next_obs)
         traj["rewards"].append(r)
         traj["dones"].append(done)
-
         # update for next iter
         obs = deepcopy(next_obs)
 
@@ -220,25 +239,35 @@ def extract_trajectory(
         else:
             traj[k] = np.array(traj[k])
 
-    # if env.env.renderer == 'igibson':
-    #     # since the first state looks bad in igibson, we only take the second frame onwards.
-    #     for k in traj:
-    #         if k == "initial_state_dict":
-    #             continue
-    #         if isinstance(traj[k], dict):
-    #             for kp in traj[k]:
-    #                 traj[k][kp] = traj[k][kp][1:]
-    #         else:
-    #             traj[k] = traj[k][1:]
-
     return traj
+
+
+def create_dataset_with_compression(group, name, data, compression="gzip", compression_opts=4):
+    """
+    Helper function to create a dataset with compression.
+
+    Args:
+        group (h5py.Group): group to create dataset in
+        name (str): name of dataset
+        data (np.array): data to write to dataset
+        compression (str): compression type
+        compression_opts (int): compression level
+    """
+    if compression is None:
+        dset = group.create_dataset(name, data=data)
+    else:
+        dset = group.create_dataset(name, data=data, chunks=data.shape, compression=compression, compression_opts=compression_opts)
+    return dset
 
 
 def dataset_states_to_obs(args):
     # create environment to use for data processing
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
     env_meta['env_kwargs']['control_freq'] = 5
-    env_meta['env_kwargs']['textures'] = 'test' if args.unseen_textures else 'train'
+    # env_meta['env_kwargs']['textures'] = 'test_white' if args.unseen_textures and not args.transparent else 'train'
+    env_meta['env_kwargs']['textures'] = 'train'
+    # env_meta['env_kwargs']['textured_table'] = args.textured_table
+    # env_meta['env_kwargs']['transparent'] = args.transparent
     env = EnvUtils.create_env_for_data_processing(
         env_meta=env_meta,
         camera_names=args.camera_names, 
@@ -284,6 +313,10 @@ def dataset_states_to_obs(args):
 
         # prepare initial state to reload from
         states = f["data/{}/states".format(ep)][()]
+        try:
+            task_start_index = f["data/{}/start_index".format(ep)][()]
+        except:
+            task_start_index = 0
         initial_state = dict(states=states[0])
         if is_robosuite_env:
             initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
@@ -298,7 +331,33 @@ def dataset_states_to_obs(args):
                 actions=actions,
                 done_mode=args.done_mode,
                 keep_textures=not args.unseen_textures,
+                task_start_index=task_start_index,
             )
+        elif args.transparent:
+            traj_transparent = extract_trajectory(
+                env=env,
+                initial_state=initial_state,
+                states=states,
+                actions=actions,
+                done_mode=args.done_mode,
+                keep_textures=not args.unseen_textures,
+                task_start_index=task_start_index
+            )
+            traj_opaque_depths = extract_trajectory(
+                env=env,
+                initial_state=initial_state,
+                states=states,
+                actions=actions,
+                done_mode=args.done_mode,
+                keep_textures=True,
+                task_start_index=task_start_index
+            )
+            for i, camera_name in enumerate(args.camera_names):
+                if args.camera_depths[i]:
+                    traj_transparent['obs'][f'{camera_name}_depth'] = traj_opaque_depths['obs'][f'{camera_name}_depth']
+                    traj_transparent['next_obs'][f'{camera_name}_depth'] = traj_opaque_depths['next_obs'][f'{camera_name}_depth']
+            traj = traj_transparent
+
         else:
             traj = extract_trajectory(
                 env=env,
@@ -307,9 +366,8 @@ def dataset_states_to_obs(args):
                 actions=actions,
                 done_mode=args.done_mode,
                 keep_textures=not args.unseen_textures,
+                task_start_index=task_start_index
             )
-
-
         if args.verbose:
             def create_visualization_gif(obs_list, obs_list_2, name, fps=5):
                 from moviepy.editor import ImageSequenceClip
@@ -346,10 +404,17 @@ def dataset_states_to_obs(args):
             if 'segmentation' in k:
                 # convert segmentations from uint32 to uint8, since we probably don't have that many segmentations
                 traj["obs"][k] = traj["obs"][k].astype(np.uint8)
-                traj["next_obs"][k] = traj["obs"][k].astype(np.uint8)
-            ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
-            if args.no_store_next_obs:
-                ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
+                traj["next_obs"][k] = traj["next_obs"][k].astype(np.uint8)
+                if "goal_obs" in traj:
+                    traj["goal_obs"][k] = traj["goal_obs"][k].astype(np.uint8)
+            # ep_data_grp.create_dataset("obs/{}".format(k), data=np.array(traj["obs"][k]))
+            create_dataset_with_compression(ep_data_grp, "obs/{}".format(k), data=np.array(traj["obs"][k]))
+            if "goal_obs" in traj:
+                # ep_data_grp.create_dataset("goal_obs/{}".format(k), data=np.array(traj["goal_obs"][k]))
+                create_dataset_with_compression(ep_data_grp, "goal_obs/{}".format(k), data=np.array(traj["goal_obs"][k]))
+            if args.store_next_obs:
+                # ep_data_grp.create_dataset("next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
+                create_dataset_with_compression(ep_data_grp, "next_obs/{}".format(k), data=np.array(traj["next_obs"][k]))
         # episode metadata
         if is_robosuite_env:
             ep_data_grp.attrs["model_file"] = traj["initial_state_dict"]["model"] # model xml for this episode
@@ -460,7 +525,7 @@ if __name__ == "__main__":
         "--camera_segmentations",
         type=str,
         nargs='+',
-        default=None,
+        default=[],
         help="(optional) types of camera segmentations to use",
     )
 
@@ -527,7 +592,7 @@ if __name__ == "__main__":
 
     # Whether or not to save next obs, setting this to False will almost halve file size
     parser.add_argument(
-        "--no_store_next_obs",
+        "--store_next_obs",
         action='store_true',
         help="(optional) whether to store next step observations",
     )
@@ -543,6 +608,18 @@ if __name__ == "__main__":
         "--unseen_textures",
         action='store_true',
         help="(optional) unseen textures",
+    )
+
+    parser.add_argument(
+        "--transparent",
+        action='store_true',
+        help="(optional) object transparency",
+    )
+
+    parser.add_argument(
+        "--textured_table",
+        action='store_true',
+        help="(optional) object transparency",
     )
 
     args = parser.parse_args()
