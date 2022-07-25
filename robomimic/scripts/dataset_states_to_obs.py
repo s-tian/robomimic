@@ -42,13 +42,14 @@ import json
 import h5py
 import argparse
 import numpy as np
+import torch
 from copy import deepcopy
+from PIL import Image
 
 import robomimic.utils.tensor_utils as TensorUtils
 import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.env_utils as EnvUtils
 from robomimic.envs.env_base import EnvBase
-
 
 def extract_trajectory_actions(
     env, 
@@ -255,9 +256,39 @@ def create_dataset_with_compression(group, name, data, compression="gzip", compr
     """
     if compression is None:
         dset = group.create_dataset(name, data=data)
+    elif compression == 'gzip':
+        dset = group.create_dataset(name, data=data, chunks=data.shape, compression=compression,
+                                    compression_opts=compression_opts, shuffle=True, scaleoffset=0)
     else:
-        dset = group.create_dataset(name, data=data, chunks=data.shape, compression=compression, compression_opts=compression_opts)
+        dset = group.create_dataset(name, data=data, chunks=data.shape, compression=compression, shuffle=True)
     return dset
+
+
+def resize_tensor(t, dims, interpolation_mode):
+    h, w = dims
+    if len(t.shape) == 3:
+        t = t[:, None]
+    t = t.permute(0, 3, 1, 2)
+    if t.shape[-2] == h and t.shape[-1] == w:
+        out = t
+    else:
+        # uses Bilinear interpolation by default, use antialiasing
+        if interpolation_mode == InterpolationMode.BILINEAR:
+            antialias = True
+        else:
+            antialias = False
+        t = Resize(dims, interpolation=interpolation_mode, antialias=antialias)(t)
+        out = t
+    return out.permute(0, 2, 3, 1)
+
+
+from torchvision.transforms import Resize, InterpolationMode
+def resize_trajectory(traj, target_size):
+    # Resize all observations which are images to have the given size using PIL Image resize (antialiased)
+    for k in traj["obs"]:
+        if len(traj["obs"][k].shape) >= 3:
+            traj["obs"][k] = resize_tensor(torch.tensor(traj["obs"][k]), target_size, interpolation_mode=InterpolationMode.BILINEAR).numpy()
+    return traj
 
 
 def dataset_states_to_obs(args):
@@ -391,8 +422,10 @@ def dataset_states_to_obs(args):
         if args.copy_dones:
             traj["dones"] = f["data/{}/dones".format(ep)][()]
 
-        # store transitions
+        if (args.render_height, args.render_width) != (args.camera_height, args.camera_width):
+            traj = resize_trajectory(traj, target_size=(args.camera_height, args.camera_width))
 
+        # store transitions
         # IMPORTANT: keep name of group the same as source file, to make sure that filter keys are
         #            consistent as well
         ep_data_grp = data_grp.create_group(ep)
@@ -597,7 +630,6 @@ if __name__ == "__main__":
         help="(optional) whether to store next step observations",
     )
 
-    # Whether or not to save next obs, setting this to False will almost halve file size
     parser.add_argument(
         "--from_actions",
         action='store_true',
