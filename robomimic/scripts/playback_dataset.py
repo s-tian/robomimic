@@ -177,7 +177,8 @@ def playback_trajectory_with_obs(
             # concatenate image obs together
             im = [traj_grp["obs/{}".format(k)][i] for k in image_names]
             frame = np.concatenate(im, axis=1)
-            frame = (frame - frame.min()) / (frame.max() - frame.min())
+            if frame.dtype != np.uint8:
+                frame = (frame - frame.min()) / (frame.max() - frame.min())
             video_writer.append_data(frame)
 
         video_count += 1

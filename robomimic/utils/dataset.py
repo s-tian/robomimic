@@ -290,10 +290,12 @@ class SequenceDataset(torch.utils.data.Dataset):
             all_data[ep]["attrs"] = {}
             all_data[ep]["attrs"]["num_samples"] = hdf5_file["data/{}".format(ep)].attrs["num_samples"]
             # get obs
-            all_data[ep]["obs"] = {k: hdf5_file["data/{}/obs/{}".format(ep, k)][()].astype('float32') for k in obs_keys}
-            all_data[ep]["obs"] = self.resize_image_observations(all_data[ep]["obs"], format='hwc', max=255.)
+            # all_data[ep]["obs"] = {k: hdf5_file["data/{}/obs/{}".format(ep, k)][()].astype('float32') for k in obs_keys}
+            all_data[ep]["obs"] = {k: hdf5_file["data/{}/obs/{}".format(ep, k)][()] for k in obs_keys}
+            all_data[ep]["obs"] = self.resize_image_observations(all_data[ep]["obs"], format='hwc', max=255)
             if load_next_obs:
-                all_data[ep]["next_obs"] = {k: hdf5_file["data/{}/next_obs/{}".format(ep, k)][()].astype('float32') for k in obs_keys}
+                all_data[ep]["next_obs"] = {k: hdf5_file["data/{}/next_obs/{}".format(ep, k)][()] for k in obs_keys}
+                all_data[ep]["next_obs"] = self.resize_image_observations(all_data[ep]["next_obs"], format='hwc', max=255)
             # get other dataset keys
             for k in dataset_keys:
                 if k in hdf5_file["data/{}".format(ep)]:
@@ -386,7 +388,6 @@ class SequenceDataset(torch.utils.data.Dataset):
                 assert(key1 in ['obs', 'next_obs'])
                 if key2 not in self.obs_keys_in_memory:
                     key_should_be_in_memory = False
-
         if key_should_be_in_memory:
             # read cache
             if '/' in key:
@@ -413,7 +414,6 @@ class SequenceDataset(torch.utils.data.Dataset):
         """
         Main implementation of getitem when not using cache.
         """
-
         demo_id = self._index_to_demo_id[index]
         demo_start_index = self._demo_id_to_start_indices[demo_id]
         demo_length = self._demo_id_to_demo_length[demo_id]
@@ -473,10 +473,10 @@ class SequenceDataset(torch.utils.data.Dataset):
             if self.hdf5_normalize_obs:
                 goal = ObsUtils.normalize_obs(goal, obs_normalization_stats=self.obs_normalization_stats)
             meta["goal_obs"] = {k: goal[k][0] for k in goal}  # remove sequence dimension for goal
-        meta["obs"] = self.resize_image_observations(meta["obs"])
+        meta["obs"] = self.resize_image_observations(meta["obs"], max=255)
         return meta
 
-    def resize_image_observations(self, obs, format='chw', max=1.0):
+    def resize_image_observations(self, obs, format='chw', max=1):
         # really gross, refactor
         def resize_tensor(t, dims, interpolation_mode):
             h, w = dims
@@ -518,7 +518,7 @@ class SequenceDataset(torch.utils.data.Dataset):
                     else:
                         obs[k] = np.moveaxis(resize_tensor(torch.tensor(np.moveaxis(v, 3, 1)), self.image_size, interpolation_mode).numpy(), 1, 3)
                         # obs[k] = np.squeeze(obs[k])
-                    obs[k] = np.clip(obs[k], 0.0, clamp_max)  # prevent interpolation numerical issues
+                    obs[k] = np.clip(obs[k], 0, clamp_max)  # prevent interpolation numerical issues
             return obs
 
     def get_sequence_from_demo(self, demo_id, index_in_demo, keys, num_frames_to_stack=0, seq_length=1):
@@ -559,7 +559,9 @@ class SequenceDataset(torch.utils.data.Dataset):
         seq = dict()
         for k in keys:
             data = self.get_dataset_for_ep(demo_id, k)
-            seq[k] = data[seq_begin_index: seq_end_index].astype("float32")
+            # seq[k] = data[seq_begin_index: seq_end_index].astype("float32")
+            # Retain existing datatype
+            seq[k] = data[seq_begin_index: seq_end_index]
 
         seq = TensorUtils.pad_sequence(seq, padding=(seq_begin_pad, seq_end_pad), pad_same=True)
         pad_mask = np.array([0] * seq_begin_pad + [1] * (seq_end_index - seq_begin_index) + [0] * seq_end_pad)

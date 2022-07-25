@@ -874,7 +874,8 @@ class ImageModality(Modality):
         Returns:
             processed_obs (np.array or torch.Tensor): processed image
         """
-        return process_frame(frame=obs, channel_dim=3, scale=255.)
+        # return process_frame(frame=obs, channel_dim=3, scale=255.)
+        return batch_image_hwc_to_chw(obs)
 
     @classmethod
     def _default_obs_unprocessor(cls, obs):
