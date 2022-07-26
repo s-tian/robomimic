@@ -80,7 +80,7 @@ def extract_trajectory(
     obs = env.reset()
     policy.reset()
     initial_state = dict(state=env.get_state())
-
+    state = env.get_state()
     traj = dict(
         obs=[],
         next_obs=[],
@@ -93,12 +93,13 @@ def extract_trajectory(
         initial_state_dict=initial_state,
     )
     traj_len = num_steps
-
+    print(obs)
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len+1):
         # get next observation
         action = policy.get_action(env)
         next_obs, rew, done, info = env.step(action)
+        next_state = env.get_state()
         r = rew
         # infer done signal
         done = False
@@ -116,14 +117,14 @@ def extract_trajectory(
         traj["rewards"].append(r)
         traj["dones"].append(done)
         traj["actions"].append(action)
-        traj["states"].append(env.get_state())
+        traj["states"].append(state)
         # update for next iter
         obs = deepcopy(next_obs)
+        state = deepcopy(next_state)
 
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
     traj["next_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["next_obs"])
-
     # list to numpy array
     for k in traj:
         if k == "initial_state_dict":
@@ -140,7 +141,7 @@ def dataset_states_to_obs(args):
     # create environment to use for data processing
 
     assert args.task in TASK_TO_POLICY, "Task {} not supported, must be one of {}".format(args.task, TASK_TO_POLICY.keys())
-    env = RoboDeskEnv(action_repeat=50, task=args.task, image_size=max(args.render_width, args.render_height))
+    env = RoboDeskEnv(image_key_name="camera_image", action_repeat=50, task=args.task, image_size=max(args.render_width, args.render_height))
     policy = NoisyPolicyWrapper(TASK_TO_POLICY[args.task], noise_std=args.policy_noise_std)
 
     print('Using env', env, 'with task ', args.task)
@@ -155,12 +156,18 @@ def dataset_states_to_obs(args):
     for ind in range(args.n):
         ep = f"demo_{ind+1}"
         # prepare initial state to reload from
-        traj = extract_trajectory(
-            env=env,
-            done_mode=args.done_mode,
-            policy=policy,
-            num_steps=args.num_steps,
-        )
+
+        sufficiently_rewarding = False
+        while not sufficiently_rewarding:
+            traj = extract_trajectory(
+                env=env,
+                done_mode=args.done_mode,
+                policy=policy,
+                num_steps=args.num_steps,
+            )
+            print("Trajectory return", traj["rewards"].sum())
+            if traj["rewards"].sum() > args.reward_threshold:
+                sufficiently_rewarding = True
 
         if (args.render_height, args.render_width) != (args.camera_height, args.camera_width):
             traj = resize_trajectory(traj, target_size=(args.camera_height, args.camera_width))
@@ -289,6 +296,13 @@ if __name__ == "__main__":
         "--store_next_obs",
         action='store_true',
         help="(optional) whether to store next step observations",
+    )
+
+    parser.add_argument(
+        "--reward_threshold",
+        type=float,
+        default=-1e10,
+        help="(optional) minimum reward to be an included trajectory",
     )
 
 
