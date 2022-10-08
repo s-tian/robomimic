@@ -93,7 +93,6 @@ def extract_trajectory(
         initial_state_dict=initial_state,
     )
     traj_len = num_steps
-    print(obs)
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len+1):
         # get next observation
@@ -121,7 +120,8 @@ def extract_trajectory(
         # update for next iter
         obs = deepcopy(next_obs)
         state = deepcopy(next_state)
-
+    traj["success"] = env._get_task_reward(env.task, "success")
+    print("Trajectory", "success" if traj["success"] else "failure")
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
     traj["next_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["next_obs"])
@@ -166,7 +166,7 @@ def dataset_states_to_obs(args):
                 num_steps=args.num_steps,
             )
             print("Trajectory return", traj["rewards"].sum())
-            if traj["rewards"].sum() > args.reward_threshold:
+            if traj["success"].sum() > args.reward_threshold:
                 sufficiently_rewarding = True
 
         if (args.render_height, args.render_width) != (args.camera_height, args.camera_width):
